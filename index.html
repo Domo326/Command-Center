@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Command Center</title>
+<meta name="description" content="Tour command center — logistics, inventory, recaps, and print queue in one place." />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Command" />
+<meta name="theme-color" content="#0b0e14" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  .theme-dark {
+    --app-bg:#0b0e14; --surface:#131722; --surface-2:#1a2030; --line:#252c3f;
+    --t1:#f2f4f8; --t2:#aeb6c8; --t3:#7c8499; --t5:#4a5166;
+    --accent:#ffb02e; --accent-soft:rgba(255,176,46,.12);
+    --danger:#ff5d5d; --ok:#3ddc97; --info:#5aa9ff;
+    --bg-image:none;
+  }
+  .theme-light {
+    --app-bg:#f4f3ef; --surface:#ffffff; --surface-2:#eceae3; --line:#dcd9cf;
+    --t1:#191b22; --t2:#454a58; --t3:#6b7080; --t5:#a8acb8;
+    --accent:#c97b00; --accent-soft:rgba(201,123,0,.12);
+    --danger:#d3372f; --ok:#0f9d6a; --info:#1e6fd9;
+    --bg-image:none;
+  }
+  .theme-ocean {
+    --app-bg:#06141f; --surface:rgba(13,38,56,.85); --surface-2:rgba(19,52,76,.9); --line:#1c4663;
+    --t1:#eaf6ff; --t2:#a9c8dc; --t3:#7aa3bc; --t5:#3f6a85;
+    --accent:#37d2c5; --accent-soft:rgba(55,210,197,.14);
+    --danger:#ff6d6d; --ok:#52e3a4; --info:#6cb8ff;
+    --bg-image:linear-gradient(160deg,#06141f 0%,#0a2436 45%,#0d3349 100%);
+  }
+  body { background:var(--app-bg); background-image:var(--bg-image); background-attachment:fixed; }
+  .bg-app{background-color:var(--app-bg)} .bg-surface{background-color:var(--surface)}
+  .bg-surface-2{background-color:var(--surface-2)} .border-line{border-color:var(--line)}
+  .text-1{color:var(--t1)} .text-2{color:var(--t2)} .text-3{color:var(--t3)} .text-5{color:var(--t5)}
+  .text-accent{color:var(--accent)} .bg-accent{background-color:var(--accent)}
+  .bg-accent-soft{background-color:var(--accent-soft)} .border-accent{border-color:var(--accent)}
+  .text-danger{color:var(--danger)} .bg-danger{background-color:var(--danger)}
+  .text-ok{color:var(--ok)} .bg-ok{background-color:var(--ok)} .text-info{color:var(--info)}
+  .font-display{font-family:'Archivo',sans-serif} .font-data{font-family:'JetBrains Mono',monospace}
+  body{font-family:'Inter',sans-serif; -webkit-font-smoothing:antialiased;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:16px;}
+  .tap{transition:transform .08s ease, opacity .12s ease} .tap:active{transform:scale(.97)}
+  input,select,textarea{outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)!important}
+  ::placeholder{color:var(--t5)}
+  .scrollbar-none::-webkit-scrollbar{display:none}
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important; transition:none!important} }
+  .pulse-dot{animation:pd 2s ease-in-out infinite}
+  @keyframes pd{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ===================== STORAGE (namespace: command:) ===================== */
+const NS = 'command:';
+const store = {
+  get(k, fb){ try{ const v = localStorage.getItem(NS+k); return v===null? fb : JSON.parse(v);}catch(e){return fb} },
+  set(k, v){ try{ localStorage.setItem(NS+k, JSON.stringify(v)); }catch(e){} },
+};
+const uid = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-3);
+const todayISO = () => new Date().toISOString().slice(0,10);
+
+/* ===================== SMART EMOJI MATCHING ===================== */
+const EMOJI_MAP = [
+  [/bottle|water|hydro/i,'🍼'],[/tote|bag/i,'👜'],[/shirt|tee/i,'👕'],[/hat|cap/i,'🧢'],
+  [/fan/i,'🪭'],[/poncho|rain/i,'🌧️'],[/sticker/i,'✨'],[/pen|marker/i,'🖊️'],
+  [/keychain|key/i,'🔑'],[/lanyard/i,'🎗️'],[/cup|tumbler/i,'🥤'],[/towel/i,'🧻'],
+  [/sunglass|shade/i,'🕶️'],[/charger|cable|power/i,'🔌'],[/phone/i,'📱'],[/ball/i,'⚽'],
+  [/candy|snack/i,'🍬'],[/koozie|cooler/i,'🧊'],[/umbrella/i,'☂️'],[/sock/i,'🧦'],
+  [/blanket/i,'🛏️'],[/notebook|journal/i,'📓'],[/light|led/i,'💡'],[/duck/i,'🦆'],
+  [/dragon/i,'🐉'],[/lamp|box/i,'🛋️'],[/letter|sign/i,'🔤'],[/plant|pot/i,'🪴'],
+];
+const smartEmoji = (name, fb='🎁') => { for(const [re,e] of EMOJI_MAP){ if(re.test(name)) return e; } return fb; };
+
+/* ===================== WEATHER (Open-Meteo, cached) ===================== */
+const WMO = (c)=> c===0?'☀️':c<=2?'🌤️':c===3?'☁️':c<=48?'🌫️':c<=57?'🌦️':c<=67?'🌧️':c<=77?'🌨️':c<=82?'🌧️':c<=86?'🌨️':'⛈️';
+async function geocodeCity(city){
+  const key = 'geo:'+city.toLowerCase().trim();
+  const cached = store.get(key,null);
+  if(cached && Date.now()-cached.ts < 60*24*3600e3) return cached;
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
+  const j = await r.json();
+  if(!j.results || !j.results.length) throw new Error('city not found');
+  const out = { lat:j.results[0].latitude, lon:j.results[0].longitude, ts:Date.now() };
+  store.set(key,out); return out;
+}
+async function fetchWeather(city, dateISO){
+  const key = `wx:${city.toLowerCase().trim()}:${dateISO}`;
+  const cached = store.get(key,null);
+  const isPast = dateISO < todayISO();
+  if(cached && (isPast || Date.now()-cached.ts < 6*3600e3)) return cached;
+  const {lat,lon} = await geocodeCity(city);
+  const base = isPast ? 'https://archive-api.open-meteo.com/v1/archive' : 'https://api.open-meteo.com/v1/forecast';
+  const r = await fetch(`${base}?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&start_date=${dateISO}&end_date=${dateISO}`);
+  const j = await r.json();
+  if(!j.daily || !j.daily.time || !j.daily.time.length) throw new Error('no weather');
+  const out = { code:j.daily.weather_code[0], hi:Math.round(j.daily.temperature_2m_max[0]), lo:Math.round(j.daily.temperature_2m_min[0]), ts:Date.now() };
+  store.set(key,out); return out;
+}
+function DayWeather({city, date}){
+  const [wx,setWx]=useState(null); const [err,setErr]=useState(false);
+  useEffect(()=>{ let live=true; setWx(null); setErr(false);
+    if(!city||!date) return;
+    const diff = (new Date(date) - new Date(todayISO()))/86400e3;
+    if(diff>15){ setErr(true); return; }
+    fetchWeather(city,date).then(w=>{ if(live) setWx(w); }).catch(()=>{ if(live) setErr(true); });
+    return ()=>{live=false};
+  },[city,date]);
+  if(!city||!date||err) return null;
+  if(!wx) return <span className="text-5 font-data text-[10px]">…</span>;
+  return <span className="font-data text-[11px] text-2 whitespace-nowrap">{WMO(wx.code)} {wx.hi}°/{wx.lo}°</span>;
+}
+
+/* ===================== SHARED UI ===================== */
+function Modal({title, onClose, children, wide}){
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6" style={{background:'rgba(0,0,0,.6)'}} onClick={onClose}>
+      <div className={`bg-surface border border-line rounded-t-3xl sm:rounded-3xl w-full ${wide?'sm:max-w-2xl':'sm:max-w-md'} max-h-[88vh] overflow-y-auto scrollbar-none`} onClick={e=>e.stopPropagation()}>
+        <div className="sticky top-0 bg-surface border-b border-line px-5 py-4 flex items-center justify-between rounded-t-3xl">
+          <h2 className="font-display font-extrabold text-lg text-1">{title}</h2>
+          <button onClick={onClose} className="tap w-8 h-8 rounded-full bg-surface-2 text-2 font-bold">✕</button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+function Field({label, children}){
+  return <label className="block mb-3"><span className="block text-[11px] font-data font-bold text-3 uppercase tracking-wider mb-1.5">{label}</span>{children}</label>;
+}
+const inputCls = "w-full bg-surface-2 border border-line rounded-xl px-3.5 py-2.5 text-sm text-1";
+function Btn({children, onClick, kind='accent', full, sm}){
+  const base = `tap rounded-xl font-display font-bold ${sm?'px-3 py-1.5 text-xs':'px-4 py-3 text-sm'} ${full?'w-full':''}`;
+  const k = kind==='accent' ? {background:'var(--accent)',color:'#10131b'} : kind==='danger' ? {background:'transparent',color:'var(--danger)',border:'1px solid var(--danger)'} : {background:'var(--surface-2)',color:'var(--t1)',border:'1px solid var(--line)'};
+  return <button onClick={onClick} className={base} style={k}>{children}</button>;
+}
+function Toast({msg}){ if(!msg) return null;
+  return <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-[60] bg-surface border border-line rounded-full px-5 py-2.5 text-sm font-bold text-1 shadow-2xl">{msg}</div>;
+}
+function InfoLine({emoji,t,body}){
+  return <div className="flex items-start gap-2 text-sm text-2"><span className="shrink-0">{emoji}</span><span><b className="text-1">{t}</b> {body}</span></div>;
+}
+function Empty({emoji, title, body}){
+  return <div className="text-center py-14 px-6"><div className="text-5xl mb-3">{emoji}</div><div className="font-display font-extrabold text-lg text-1 mb-1">{title}</div><div className="text-sm text-3 max-w-xs mx-auto">{body}</div></div>;
+}
+
+/* ===================== APP STATE DEFAULTS ===================== */
+const DEFAULT_PRINT_STATUSES = ['💭 Idea','📋 Queued','🖨️ Printing','✅ Done'];
+function nextStatus(s){ const i = DEFAULT_PRINT_STATUSES.indexOf(s); return DEFAULT_PRINT_STATUSES[(i+1)%DEFAULT_PRINT_STATUSES.length]; }
+
+/* ===================== RECAP GENERATOR ===================== */
+function buildRecap(r, ev){
+  const lines = [];
+  lines.push(`📍 EVENT RECAP — ${ev? ev.name : 'Event'}${ev&&ev.city? ' · '+ev.city : ''}`);
+  lines.push(`📅 ${r.date}`);
+  lines.push('');
+  if(r.attendance) lines.push(`👥 Est. attendance / footprint traffic: ${r.attendance}`);
+  if(r.interactions) lines.push(`🤝 Consumer interactions: ${r.interactions}`);
+  if(r.qr) lines.push(`📲 QR scans / sign-ups: ${r.qr}`);
+  if(r.premiums) lines.push(`🎁 Premiums distributed: ${r.premiums}`);
+  if(r.weather) lines.push(`🌦️ Weather: ${r.weather}`);
+  lines.push('');
+  if(r.highlights){ lines.push('⭐ HIGHLIGHTS'); lines.push(r.highlights); lines.push(''); }
+  if(r.issues){ lines.push('⚠️ ISSUES / NOTES'); lines.push(r.issues); lines.push(''); }
+  if(r.staff){ lines.push('🧑‍🤝‍🧑 STAFF'); lines.push(r.staff); lines.push(''); }
+  lines.push('— Submitted via Command Center');
+  return lines.join('\n');
+}
+
+/* ===================== SCREENS ===================== */
+
+/* ---- DASHBOARD ---- */
+function Dashboard({events, items, prints, recaps, go}){
+  const today = todayISO();
+  const upcoming = events.filter(e=>e.date && e.date>=today).sort((a,b)=>a.date.localeCompare(b.date));
+  const next = upcoming[0];
+  const live = events.find(e=> e.date && e.date<=today && (e.endDate||e.date)>=today);
+  const low = items.filter(i=> i.threshold>0 && (i.start + i.restocked - i.given) <= i.threshold);
+  const printing = prints.filter(p=>p.status==='🖨️ Printing').length;
+  const queued = prints.filter(p=>p.status==='📋 Queued').length;
+  const daysOut = next ? Math.round((new Date(next.date)-new Date(today))/86400e3) : null;
+  return (
+    <div className="space-y-4">
+      {live ? (
+        <div className="card p-5" style={{borderColor:'var(--accent)'}}>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-ok pulse-dot"></span>
+            <span className="text-[10px] font-data font-bold uppercase tracking-widest text-ok">Live now</span>
+          </div>
+          <div className="font-display font-extrabold text-2xl text-1">{live.name}</div>
+          <div className="text-sm text-3 mt-0.5 flex items-center gap-2 flex-wrap">
+            {live.city && <span>📍 {live.city}</span>}
+            {live.city && <DayWeather city={live.city} date={today}/>}
+          </div>
+          <div className="mt-3"><Btn sm onClick={()=>go('recap')}>📝 Start today's recap</Btn></div>
+        </div>
+      ) : next ? (
+        <div className="card p-5">
+          <div className="text-[10px] font-data font-bold uppercase tracking-widest text-accent mb-1">Next event · {daysOut===0?'today':daysOut===1?'tomorrow':`in ${daysOut} days`}</div>
+          <div className="font-display font-extrabold text-2xl text-1">{next.name}</div>
+          <div className="text-sm text-3 mt-0.5 flex items-center gap-2 flex-wrap">
+            {next.city && <span>📍 {next.city}</span>}
+            <span className="font-data text-[11px]">📅 {next.date}{next.endDate && next.endDate!==next.date ? ' → '+next.endDate : ''}</span>
+            {next.city && <DayWeather city={next.city} date={next.date}/>}
+          </div>
+          {next.hotel && <div className="text-xs text-3 mt-2">🏨 {next.hotel}</div>}
+          {next.parking && <div className="text-xs text-3 mt-1">🅿️ {next.parking}</div>}
+        </div>
+      ) : (
+        <div className="card"><Empty emoji="🗺️" title="No events on the books" body="Add your next stop in the Tour tab and the route comes alive here."/></div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={()=>go('inventory')} className="tap card p-4 text-left relative">
+          <div className="text-2xl mb-1.5">📦{low.length>0 && <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-danger" style={{boxShadow:'0 0 0 2px var(--surface)'}}></span>}</div>
+          <div className="font-display font-bold text-sm text-1">{items.length} item{items.length!==1?'s':''}</div>
+          <div className="text-[11px] text-3">{low.length>0 ? `${low.length} running low` : 'stock looks good'}</div>
+        </button>
+        <button onClick={()=>go('prints')} className="tap card p-4 text-left">
+          <div className="text-2xl mb-1.5">🖨️</div>
+          <div className="font-display font-bold text-sm text-1">{printing>0? `${printing} printing` : `${queued} queued`}</div>
+          <div className="text-[11px] text-3">PrintNest queue</div>
+        </button>
+        <button onClick={()=>go('tour')} className="tap card p-4 text-left">
+          <div className="text-2xl mb-1.5">🗺️</div>
+          <div className="font-display font-bold text-sm text-1">{upcoming.length} upcoming</div>
+          <div className="text-[11px] text-3">{events.length} total stops</div>
+        </button>
+        <button onClick={()=>go('recap')} className="tap card p-4 text-left">
+          <div className="text-2xl mb-1.5">📝</div>
+          <div className="font-display font-bold text-sm text-1">{recaps.length} recap{recaps.length!==1?'s':''}</div>
+          <div className="text-[11px] text-3">24-hr reporting, handled</div>
+        </button>
+      </div>
+
+      {low.length>0 && (
+        <div className="card p-4">
+          <div className="text-[10px] font-data font-bold uppercase tracking-widest text-danger mb-2">⚠️ Low stock</div>
+          {low.map(i=>{ const left = i.start+i.restocked-i.given; return (
+            <div key={i.id} className="flex items-center justify-between py-1.5 text-sm">
+              <span className="text-1">{i.emoji} {i.name}</span>
+              <span className="font-data font-bold text-danger">{left} left</span>
+            </div>
+          );})}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- TOUR (events) ---- */
+function EventModal({ev, onSave, onDelete, onClose}){
+  const [f,setF]=useState(ev || {name:'',city:'',venue:'',date:todayISO(),endDate:'',hotel:'',parking:'',notes:''});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  return (
+    <Modal title={ev? 'Edit stop' : 'New stop'} onClose={onClose}>
+      <Field label="Event name"><input className={inputCls} value={f.name} onChange={e=>set('name',e.target.value)} placeholder="State Fair, FanX, MLB game…"/></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="City"><input className={inputCls} value={f.city} onChange={e=>set('city',e.target.value)} placeholder="Phoenix"/></Field>
+        <Field label="Venue"><input className={inputCls} value={f.venue} onChange={e=>set('venue',e.target.value)} placeholder="Chase Field"/></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Start date"><input type="date" className={inputCls} value={f.date} onChange={e=>set('date',e.target.value)}/></Field>
+        <Field label="End date (opt.)"><input type="date" className={inputCls} value={f.endDate} onChange={e=>set('endDate',e.target.value)}/></Field>
+      </div>
+      <Field label="🏨 Hotel + confirmation"><input className={inputCls} value={f.hotel} onChange={e=>set('hotel',e.target.value)} placeholder="Hampton Inn · conf #ABC123"/></Field>
+      <Field label="🅿️ Truck parking notes"><input className={inputCls} value={f.parking} onChange={e=>set('parking',e.target.value)} placeholder="Back lot fits 26' — call ahead"/></Field>
+      <Field label="Notes"><textarea rows="2" className={inputCls} value={f.notes} onChange={e=>set('notes',e.target.value)} placeholder="Load-in 6am, dock on north side…"/></Field>
+      <div className="flex gap-2 mt-2">
+        <Btn full onClick={()=>{ if(!f.name.trim()) return; onSave({...f, id: f.id||uid()}); }}>{ev?'Save changes':'Add stop'}</Btn>
+        {ev && <Btn kind="danger" onClick={()=>onDelete(ev.id)}>🗑️</Btn>}
+      </div>
+    </Modal>
+  );
+}
+function TourScreen({events, setEvents, toast}){
+  const [modal,setModal]=useState(null); // 'new' | event object
+  const today = todayISO();
+  const sorted = [...events].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const upcoming = sorted.filter(e=>(e.endDate||e.date)>=today);
+  const past = sorted.filter(e=>(e.endDate||e.date)<today).reverse();
+  const save=(ev)=>{ setEvents(p=>{ const i=p.findIndex(x=>x.id===ev.id); if(i<0) return [...p,ev]; const c=[...p]; c[i]=ev; return c; }); setModal(null); toast(modal==='new'?'Stop added 🗺️':'Saved ✓'); };
+  const del=(id)=>{ setEvents(p=>p.filter(x=>x.id!==id)); setModal(null); toast('Stop removed'); };
+  const Row=({e})=>{
+    const live = e.date<=today && (e.endDate||e.date)>=today;
+    return (
+      <button onClick={()=>setModal(e)} className="tap w-full text-left card p-4 mb-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {live && <span className="w-2 h-2 rounded-full bg-ok pulse-dot shrink-0"></span>}
+              <span className="font-display font-bold text-1 truncate">{e.name}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-3 mt-1 flex-wrap">
+              {e.city && <span>📍 {e.city}</span>}
+              <span className="font-data">📅 {e.date}{e.endDate&&e.endDate!==e.date?' → '+e.endDate:''}</span>
+              {e.city && e.date && <DayWeather city={e.city} date={e.date<today? e.date : (e.date>today? e.date : today)}/>}
+            </div>
+            {(e.hotel||e.parking) && <div className="text-[11px] text-5 mt-1 truncate">{e.hotel?'🏨 '+e.hotel:''}{e.hotel&&e.parking?'  ·  ':''}{e.parking?'🅿️ '+e.parking:''}</div>}
+          </div>
+          <span className="text-5 shrink-0">›</span>
+        </div>
+      </button>
+    );
+  };
+  return (
+    <div>
+      <Btn full onClick={()=>setModal('new')}>➕ Add a stop</Btn>
+      <div className="mt-4">
+        {upcoming.length===0 && past.length===0 && <div className="card mt-2"><Empty emoji="🚚" title="Empty route" body="Add your stops — city, dates, hotel, and truck parking notes all live here."/></div>}
+        {upcoming.length>0 && <div className="text-[10px] font-data font-bold uppercase tracking-widest text-3 mb-2">Up next</div>}
+        {upcoming.map(e=><Row key={e.id} e={e}/>)}
+        {past.length>0 && <div className="text-[10px] font-data font-bold uppercase tracking-widest text-5 mb-2 mt-5">In the rearview</div>}
+        {past.map(e=><Row key={e.id} e={e}/>)}
+      </div>
+      {modal && <EventModal ev={modal==='new'? null : modal} onSave={save} onDelete={del} onClose={()=>setModal(null)}/>}
+    </div>
+  );
+}
+
+/* ---- INVENTORY ---- */
+function ItemModal({item, onSave, onDelete, onClose}){
+  const [f,setF]=useState(item || {name:'',emoji:'',start:0,threshold:10});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const preview = f.emoji.trim() || smartEmoji(f.name);
+  return (
+    <Modal title={item?'Edit item':'New item'} onClose={onClose}>
+      <Field label="Item name"><input className={inputCls} value={f.name} onChange={e=>set('name',e.target.value)} placeholder="Canvas tote bags"/></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={`Emoji (auto: ${preview})`}><input className={inputCls} value={f.emoji} onChange={e=>set('emoji',e.target.value)} placeholder={preview}/></Field>
+        <Field label="Low-stock alert at"><input type="number" className={inputCls} value={f.threshold} onChange={e=>set('threshold',parseInt(e.target.value)||0)}/></Field>
+      </div>
+      {!item && <Field label="Starting quantity"><input type="number" className={inputCls} value={f.start} onChange={e=>set('start',parseInt(e.target.value)||0)}/></Field>}
+      <div className="flex gap-2 mt-2">
+        <Btn full onClick={()=>{ if(!f.name.trim()) return; onSave({...f, emoji: f.emoji.trim()||smartEmoji(f.name), id:f.id||uid(), start:f.start||0, given:f.given||0, restocked:f.restocked||0}); }}>{item?'Save changes':'Add item'}</Btn>
+        {item && <Btn kind="danger" onClick={()=>onDelete(item.id)}>🗑️</Btn>}
+      </div>
+    </Modal>
+  );
+}
+function BatchModal({item, mode, onApply, onClose}){
+  const [n,setN]=useState('');
+  const t = mode==='give' ? `Give out · ${item.emoji} ${item.name}` : `Restock · ${item.emoji} ${item.name}`;
+  const quick = mode==='give' ? [5,10,25,50] : [25,50,100,250];
+  return (
+    <Modal title={t} onClose={onClose}>
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        {quick.map(q=><Btn key={q} kind="ghost" onClick={()=>onApply(q)}>+{q}</Btn>)}
+      </div>
+      <Field label="Custom amount"><input type="number" autoFocus className={inputCls} value={n} onChange={e=>setN(e.target.value)} placeholder="0"/></Field>
+      <Btn full onClick={()=>{ const v=parseInt(n)||0; if(v>0) onApply(v); }}>{mode==='give'?'Log batch given out':'Add to stock'}</Btn>
+    </Modal>
+  );
+}
+function InventoryScreen({items, setItems, toast}){
+  const [modal,setModal]=useState(null); // 'new' | {item} | {item,mode}
+  const save=(it)=>{ setItems(p=>{ const i=p.findIndex(x=>x.id===it.id); if(i<0) return [...p,it]; const c=[...p]; c[i]={...c[i],...it}; return c; }); setModal(null); toast('Saved ✓'); };
+  const del=(id)=>{ setItems(p=>p.filter(x=>x.id!==id)); setModal(null); toast('Item removed'); };
+  const apply=(id,mode,n)=>{ setItems(p=>p.map(x=> x.id===id ? {...x, given: mode==='give'? x.given+n : x.given, restocked: mode==='restock'? x.restocked+n : x.restocked } : x)); setModal(null); toast(mode==='give'? `−${n} logged 🎁` : `+${n} restocked 📦`); };
+  const totalGiven = items.reduce((s,i)=>s+i.given,0);
+  return (
+    <div>
+      <div className="flex gap-2 items-center mb-4">
+        <Btn full onClick={()=>setModal('new')}>➕ Add item</Btn>
+        <div className="card px-3.5 py-2.5 text-center shrink-0">
+          <div className="font-data font-bold text-accent text-sm leading-none">{totalGiven}</div>
+          <div className="text-[9px] font-data text-3 uppercase tracking-wider mt-1">given out</div>
+        </div>
+      </div>
+      {items.length===0 && <div className="card"><Empty emoji="🎁" title="No premiums yet" body="Add your giveaway items — type a name and the emoji finds itself."/></div>}
+      {items.map(i=>{
+        const left = i.start + i.restocked - i.given;
+        const low = i.threshold>0 && left<=i.threshold;
+        const pct = i.start+i.restocked>0 ? Math.max(0,Math.min(100, left/(i.start+i.restocked)*100)) : 0;
+        return (
+          <div key={i.id} className="card p-4 mb-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <button onClick={()=>setModal({item:i})} className="tap text-left min-w-0">
+                <div className="font-display font-bold text-1 truncate">{i.emoji} {i.name}</div>
+                <div className="text-[11px] font-data text-3 mt-0.5">start {i.start} · restock +{i.restocked} · given {i.given}</div>
+              </button>
+              <div className="text-right shrink-0">
+                <div className={`font-data font-bold text-lg leading-none ${low?'text-danger':'text-1'}`}>{left}</div>
+                <div className="text-[9px] font-data text-3 uppercase tracking-wider mt-0.5">left{low?' ⚠️':''}</div>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full bg-surface-2 mt-3 overflow-hidden"><div className="h-full rounded-full" style={{width:pct+'%', background: low?'var(--danger)':'var(--accent)'}}></div></div>
+            <div className="flex gap-2 mt-3">
+              <Btn sm kind="ghost" onClick={()=>setModal({item:i,mode:'give'})}>🎁 Give out</Btn>
+              <Btn sm kind="ghost" onClick={()=>setModal({item:i,mode:'restock'})}>📦 Restock</Btn>
+            </div>
+          </div>
+        );
+      })}
+      {modal==='new' && <ItemModal onSave={save} onClose={()=>setModal(null)}/>}
+      {modal && modal.item && !modal.mode && <ItemModal item={modal.item} onSave={save} onDelete={del} onClose={()=>setModal(null)}/>}
+      {modal && modal.mode && <BatchModal item={modal.item} mode={modal.mode} onApply={(n)=>apply(modal.item.id,modal.mode,n)} onClose={()=>setModal(null)}/>}
+    </div>
+  );
+}
+
+/* ---- RECAP ---- */
+function RecapScreen({events, recaps, setRecaps, toast}){
+  const blank = {eventId:'', date:todayISO(), attendance:'', interactions:'', qr:'', premiums:'', weather:'', highlights:'', issues:'', staff:''};
+  const [f,setF]=useState(blank);
+  const [view,setView]=useState(null);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const ev = events.find(e=>e.id===f.eventId);
+  const copy = async (text)=>{ try{ await navigator.clipboard.writeText(text); toast('Copied — paste into your report 📋'); }catch(e){ toast('Copy failed — long-press to select'); } };
+  const save=()=>{ const rec={...f, id:uid()}; setRecaps(p=>[rec,...p]); copy(buildRecap(rec, events.find(e=>e.id===rec.eventId))); setF(blank); };
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <div className="text-[10px] font-data font-bold uppercase tracking-widest text-accent mb-3">New recap · due within 24 hrs ⏱️</div>
+        <Field label="Event">
+          <select className={inputCls} value={f.eventId} onChange={e=>set('eventId',e.target.value)}>
+            <option value="">— pick a stop —</option>
+            {events.map(e=><option key={e.id} value={e.id}>{e.name}{e.city?' · '+e.city:''}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Date"><input type="date" className={inputCls} value={f.date} onChange={e=>set('date',e.target.value)}/></Field>
+          <Field label="👥 Attendance est."><input className={inputCls} value={f.attendance} onChange={e=>set('attendance',e.target.value)} placeholder="~5,000"/></Field>
+          <Field label="🤝 Interactions"><input className={inputCls} value={f.interactions} onChange={e=>set('interactions',e.target.value)} placeholder="420"/></Field>
+          <Field label="📲 QR scans"><input className={inputCls} value={f.qr} onChange={e=>set('qr',e.target.value)} placeholder="180"/></Field>
+          <Field label="🎁 Premiums out"><input className={inputCls} value={f.premiums} onChange={e=>set('premiums',e.target.value)} placeholder="350"/></Field>
+          <Field label="🌦️ Weather"><input className={inputCls} value={f.weather} onChange={e=>set('weather',e.target.value)} placeholder="Sunny, 92°"/></Field>
+        </div>
+        <Field label="⭐ Highlights"><textarea rows="2" className={inputCls} value={f.highlights} onChange={e=>set('highlights',e.target.value)} placeholder="Big line at the game, rep closed 6 sales…"/></Field>
+        <Field label="⚠️ Issues / notes"><textarea rows="2" className={inputCls} value={f.issues} onChange={e=>set('issues',e.target.value)} placeholder="Generator hiccup at noon, resolved…"/></Field>
+        <Field label="🧑‍🤝‍🧑 Staff"><input className={inputCls} value={f.staff} onChange={e=>set('staff',e.target.value)} placeholder="Domo + Alina + 2 BAs"/></Field>
+        <Btn full onClick={save}>📝 Generate + copy recap</Btn>
+      </div>
+      {recaps.length>0 && <div>
+        <div className="text-[10px] font-data font-bold uppercase tracking-widest text-3 mb-2">Recap history</div>
+        {recaps.map(r=>{ const e=events.find(x=>x.id===r.eventId); return (
+          <button key={r.id} onClick={()=>setView(r)} className="tap w-full text-left card p-3.5 mb-2 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-display font-bold text-sm text-1 truncate">{e? e.name : 'Event'}</div>
+              <div className="text-[11px] font-data text-3">📅 {r.date}{r.premiums?` · 🎁 ${r.premiums}`:''}</div>
+            </div><span className="text-5">›</span>
+          </button>
+        );})}
+      </div>}
+      {view && (
+        <Modal title="Recap" onClose={()=>setView(null)} wide>
+          <pre className="whitespace-pre-wrap text-sm text-2 font-data bg-surface-2 border border-line rounded-xl p-4 mb-3">{buildRecap(view, events.find(e=>e.id===view.eventId))}</pre>
+          <div className="flex gap-2">
+            <Btn full onClick={()=>copy(buildRecap(view, events.find(e=>e.id===view.eventId)))}>📋 Copy</Btn>
+            <Btn kind="danger" onClick={()=>{ setRecaps(p=>p.filter(x=>x.id!==view.id)); setView(null); toast('Recap deleted'); }}>🗑️</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ---- PRINTNEST ---- */
+function PrintScreen({prints, setPrints, toast}){
+  const [modal,setModal]=useState(null);
+  const [f,setF]=useState({name:'',printer:'',notes:''});
+  const cycle=(id)=>setPrints(p=>p.map(x=>x.id===id?{...x,status:nextStatus(x.status)}:x));
+  const add=()=>{ if(!f.name.trim()) return; setPrints(p=>[{id:uid(), name:f.name, emoji:smartEmoji(f.name,'🧩'), printer:f.printer, notes:f.notes, status:'💭 Idea'},...p]); setF({name:'',printer:'',notes:''}); setModal(null); toast('Added to the nest 🪺'); };
+  const groups = DEFAULT_PRINT_STATUSES.map(s=>[s, prints.filter(p=>p.status===s)]);
+  return (
+    <div>
+      <Btn full onClick={()=>setModal(true)}>➕ New print / idea</Btn>
+      {prints.length===0 && <div className="card mt-4"><Empty emoji="🪺" title="The nest is empty" body="Drop in print ideas on the road — tap a card to move it Idea → Queued → Printing → Done."/></div>}
+      {groups.map(([s,list])=> list.length>0 && (
+        <div key={s} className="mt-5">
+          <div className="text-[10px] font-data font-bold uppercase tracking-widest text-3 mb-2">{s} · {list.length}</div>
+          {list.map(p=>(
+            <div key={p.id} className="card p-3.5 mb-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-display font-bold text-sm text-1 truncate">{p.emoji} {p.name}</div>
+                <div className="text-[11px] text-3 truncate">{p.printer?'🖨️ '+p.printer:''}{p.printer&&p.notes?' · ':''}{p.notes||''}</div>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                <Btn sm kind="ghost" onClick={()=>cycle(p.id)}>{p.status==='✅ Done'?'↩︎':'→'}</Btn>
+                <Btn sm kind="danger" onClick={()=>{setPrints(x=>x.filter(y=>y.id!==p.id)); toast('Removed');}}>✕</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      {modal && (
+        <Modal title="New print" onClose={()=>setModal(null)}>
+          <Field label="What are we printing?"><input autoFocus className={inputCls} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} placeholder="Channel letter set, shadow box lamp…"/></Field>
+          <Field label="Printer (opt.)">
+            <select className={inputCls} value={f.printer} onChange={e=>setF(p=>({...p,printer:e.target.value}))}>
+              <option value="">—</option>
+              {['H2D','X1C','P1S','A1','A1 Mini','Resin'].map(x=><option key={x}>{x}</option>)}
+            </select>
+          </Field>
+          <Field label="Notes"><input className={inputCls} value={f.notes} onChange={e=>setF(p=>({...p,notes:e.target.value}))} placeholder="PETG, 0.2mm, client wants matte black"/></Field>
+          <Btn full onClick={add}>Add to PrintNest</Btn>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ===================== APP SHELL ===================== */
+const TABS = [
+  {id:'home', emoji:'🏠', label:'Home'},
+  {id:'tour', emoji:'🗺️', label:'Tour'},
+  {id:'inventory', emoji:'📦', label:'Inventory'},
+  {id:'recap', emoji:'📝', label:'Recap'},
+  {id:'prints', emoji:'🖨️', label:'PrintNest'},
+];
+const THEMES = ['dark','light','ocean'];
+const THEME_EMOJI = {dark:'🌙', light:'☀️', ocean:'🌊'};
+
+function WelcomeBody(){
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-2">Your whole tour day, one app 🚌</p>
+      <InfoLine emoji="🗺️" t="Tour" body="— every stop with dates, hotel + confirmation, truck parking notes, and live weather pulled automatically."/>
+      <InfoLine emoji="📦" t="Inventory" body="— premiums with smart emoji matching, batch give-outs, restocks, and low-stock alerts."/>
+      <InfoLine emoji="📝" t="Recap" body="— fill the form, get a formatted event recap copied to your clipboard for the 24-hour report window."/>
+      <InfoLine emoji="🖨️" t="PrintNest" body="— a print queue for the side hustle: Idea → Queued → Printing → Done."/>
+      <InfoLine emoji="💾" t="Offline-first" body="— everything saves to this device. No account, no signal needed."/>
+    </div>
+  );
+}
+
+function App(){
+  const [theme,setTheme]=useState(store.get('theme','dark'));
+  const [tab,setTab]=useState('home');
+  const [events,setEvents]=useState(store.get('events',[]));
+  const [items,setItems]=useState(store.get('items',[]));
+  const [recaps,setRecaps]=useState(store.get('recaps',[]));
+  const [prints,setPrints]=useState(store.get('prints',[]));
+  const [info,setInfo]=useState(!store.get('welcomed',false));
+  const [toastMsg,setToastMsg]=useState('');
+  const toastT=useRef(null);
+  const toast=(m)=>{ setToastMsg(m); clearTimeout(toastT.current); toastT.current=setTimeout(()=>setToastMsg(''),2200); };
+
+  useEffect(()=>store.set('events',events),[events]);
+  useEffect(()=>store.set('items',items),[items]);
+  useEffect(()=>store.set('recaps',recaps),[recaps]);
+  useEffect(()=>store.set('prints',prints),[prints]);
+  useEffect(()=>store.set('theme',theme),[theme]);
+  useEffect(()=>{ document.body.className=''; },[]);
+
+  const closeWelcome=()=>{ setInfo(false); store.set('welcomed',true); };
+  const cycleTheme=()=> setTheme(t=>THEMES[(THEMES.indexOf(t)+1)%THEMES.length]);
+  const lowCount = items.filter(i=> i.threshold>0 && (i.start+i.restocked-i.given)<=i.threshold).length;
+
+  const Nav = ({vertical}) => (
+    <nav className={vertical ? 'flex flex-col gap-1' : 'flex justify-around'}>
+      {TABS.map(t=>{
+        const active = tab===t.id;
+        return (
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            className={`tap relative flex ${vertical?'flex-row items-center gap-3 px-3 py-2.5 rounded-xl w-full':'flex-col items-center gap-0.5 py-2 px-1 flex-1'} ${active? (vertical?'bg-accent-soft border border-accent':'') : (vertical?'border border-transparent':'')}`}>
+            <span className="text-xl relative">{t.emoji}
+              {t.id==='inventory' && lowCount>0 && <span className="absolute -bottom-0.5 -right-1 w-2.5 h-2.5 rounded-full bg-danger" style={{boxShadow:'0 0 0 2px var(--app-bg)'}}></span>}
+            </span>
+            <span className={`text-[10px] font-data font-bold uppercase tracking-wider ${active?'text-accent':'text-3'} ${vertical?'text-xs':''}`}>{t.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+
+  const screen =
+    tab==='home' ? <Dashboard events={events} items={items} prints={prints} recaps={recaps} go={setTab}/> :
+    tab==='tour' ? <TourScreen events={events} setEvents={setEvents} toast={toast}/> :
+    tab==='inventory' ? <InventoryScreen items={items} setItems={setItems} toast={toast}/> :
+    tab==='recap' ? <RecapScreen events={events} recaps={recaps} setRecaps={setRecaps} toast={toast}/> :
+    <PrintScreen prints={prints} setPrints={setPrints} toast={toast}/>;
+
+  return (
+    <div className={`theme-${theme} min-h-screen w-full`} style={{background:'var(--app-bg)', backgroundImage:'var(--bg-image)'}}>
+      <div className="mx-auto max-w-6xl md:flex">
+        {/* Sidebar — wide screens / Fold open */}
+        <aside className="hidden md:flex md:flex-col w-60 shrink-0 border-r border-line min-h-screen p-5 sticky top-0 self-start">
+          <div className="mb-1 text-[10px] font-data font-bold uppercase tracking-widest text-3">🚚 Tour HQ</div>
+          <h1 className="font-display font-black text-3xl text-1 mb-6">Command<span className="text-accent">.</span></h1>
+          <Nav vertical/>
+          <div className="mt-auto pt-6 flex gap-2">
+            <button onClick={cycleTheme} className="tap w-9 h-9 rounded-xl bg-surface-2 border border-line">{THEME_EMOJI[theme]}</button>
+            <button onClick={()=>setInfo(true)} className="tap w-9 h-9 rounded-xl bg-surface-2 border border-line text-2 font-bold">ⓘ</button>
+          </div>
+        </aside>
+
+        {/* Main */}
+        <main className="flex-1 min-w-0 px-4 pt-5 pb-28 md:pb-10 md:px-8">
+          {/* Mobile header */}
+          <header className="md:hidden flex items-start justify-between mb-5">
+            <div>
+              <div className="text-[10px] font-data font-bold uppercase tracking-widest text-3">🚚 Tour HQ</div>
+              <h1 className="font-display font-black text-2xl text-1 leading-tight">Command<span className="text-accent">.</span></h1>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={cycleTheme} className="tap w-9 h-9 rounded-xl bg-surface border border-line">{THEME_EMOJI[theme]}</button>
+              <button onClick={()=>setInfo(true)} className="tap w-9 h-9 rounded-xl bg-surface border border-line text-2 font-bold">ⓘ</button>
+            </div>
+          </header>
+          <div className="hidden md:block mb-5">
+            <h2 className="font-display font-extrabold text-xl text-1">{TABS.find(t=>t.id===tab).emoji} {TABS.find(t=>t.id===tab).label}</h2>
+          </div>
+          {screen}
+        </main>
+      </div>
+
+      {/* Bottom tab bar — phones */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 bg-surface border-t border-line" style={{paddingBottom:'env(safe-area-inset-bottom)'}}>
+        <Nav/>
+      </div>
+
+      {info && (
+        <Modal title="Welcome to Command Center!" onClose={closeWelcome}>
+          <WelcomeBody/>
+          <div className="mt-5"><Btn full onClick={closeWelcome}>Let's roll 🚚</Btn></div>
+        </Modal>
+      )}
+      <Toast msg={toastMsg}/>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
